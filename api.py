@@ -47,14 +47,35 @@ class WOMClient:
         """
         Get all group members with their current stats.
         
+        Uses the hiscores endpoint which returns all members with player data.
+        
         Returns list of: {
             player: {id, username, displayName, type, build, country, status,
                      patron, exp, ehp, ehb, ttm, tt200m, registeredAt, updatedAt,
                      lastChangedAt, lastImportedAt},
-            membership: {playerId, groupId, role, createdAt, updatedAt}
+            data: {rank, level, experience}
         }
         """
-        return self._get(f"/groups/{group_id}/members")
+        # The hiscores endpoint returns all members with their stats
+        # It accepts a metric parameter (default: overall)
+        hiscores = self._get(f"/groups/{group_id}/hiscores", params={"metric": "overall"})
+        
+        # Transform to match expected member format
+        # The hiscores response has player data, we need to add membership info
+        members = []
+        for entry in hiscores:
+            player = entry.get("player", {})
+            members.append({
+                "player": player,
+                "membership": {
+                    "playerId": player.get("id"),
+                    "groupId": group_id,
+                    "role": entry.get("role", "member"),
+                    "createdAt": player.get("registeredAt"),
+                    "updatedAt": player.get("updatedAt"),
+                }
+            })
+        return members
     
     def get_group_hiscores(
         self, 
