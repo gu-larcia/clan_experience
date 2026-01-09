@@ -55,7 +55,7 @@ def analyze_members(
     Analyze all members and return aggregated stats.
     
     Args:
-        raw_members: List from WOM /hiscores endpoint
+        raw_members: List from WOM API (may include untracked members)
         thresholds: Activity threshold days
         colors: Status color mapping
         
@@ -64,12 +64,35 @@ def analyze_members(
     """
     from api import parse_datetime
 
-    counts = {"active": 0, "at_risk": 0, "inactive": 0, "churned": 0, "unknown": 0}
+    counts = {"active": 0, "at_risk": 0, "inactive": 0, "churned": 0, "unknown": 0, "untracked": 0}
     totals = {"xp": 0, "ehp": 0.0, "ehb": 0.0}
     members = []
 
     for entry in raw_members:
         player = entry.get("player", {})
+        
+        # Check for untracked members (no stats in WOM)
+        player_status = player.get("status", "active")
+        xp = player.get("exp")
+        
+        if player_status == "untracked" or xp is None:
+            # Untracked member - no stats available
+            members.append({
+                "username": player.get("displayName") or player.get("username") or "Unknown",
+                "player_id": player.get("id"),
+                "role": entry.get("membership", {}).get("role") or entry.get("role", "member"),
+                "xp": 0,
+                "ehp": 0,
+                "ehb": 0,
+                "type": player.get("type", "unknown"),
+                "build": player.get("build", "unknown"),
+                "status": "untracked",
+                "days_inactive": -1,
+                "color": colors.get("untracked", "#6c757d"),
+                "last_changed": None,
+            })
+            counts["untracked"] += 1
+            continue
         
         # Parse activity timestamp
         last_changed = parse_datetime(player.get("lastChangedAt"))
@@ -77,7 +100,6 @@ def analyze_members(
         counts[status.status] += 1
 
         # Aggregate totals
-        xp = player.get("exp") or 0
         ehp = player.get("ehp") or 0.0
         ehb = player.get("ehb") or 0.0
         totals["xp"] += xp
@@ -99,20 +121,25 @@ def analyze_members(
             "last_changed": last_changed,
         })
 
-    total = len(members) or 1  # Avoid division by zero
+    total = len(members) or 1
+    tracked = total - counts["untracked"]
     
-    # Health score: weighted average (active=100, at_risk=50, inactive=20, churned=0)
+    # Health score based on tracked members only
     weights = {"active": 100, "at_risk": 50, "inactive": 20, "churned": 0, "unknown": 25}
-    health = sum(counts[s] * weights[s] for s in weights) / total
+    if tracked > 0:
+        health = sum(counts[s] * weights[s] for s in weights) / tracked
+    else:
+        health = 0
 
     return {
         "members": members,
         "counts": counts,
         "percentages": {k: v / total * 100 for k, v in counts.items()},
         "totals": totals,
-        "averages": {k: v / total for k, v in totals.items()},
+        "averages": {k: v / tracked if tracked > 0 else 0 for k, v in totals.items()},
         "health_score": health,
-        "total_members": len(members),
+        "total_members": total,
+        "tracked_members": tracked,
     }
 
 

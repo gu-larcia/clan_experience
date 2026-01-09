@@ -169,24 +169,17 @@ def main():
         st.divider()
         st.subheader("Quick Stats")
         
-        # Show expected vs actual member count
-        expected_count = group.get("memberCount", 0) if group else 0
-        actual_count = analysis["total_members"]
+        c1, c2 = st.columns(2)
+        c1.metric("Total", analysis["total_members"])
+        c2.metric("Tracked", analysis.get("tracked_members", analysis["total_members"]))
         
         c1, c2 = st.columns(2)
-        c1.metric("Total", actual_count)
-        c2.metric("Active", analysis["counts"]["active"])
+        c1.metric("Active", analysis["counts"]["active"])
+        c2.metric("At Risk", analysis["counts"]["at_risk"])
         
         c1, c2 = st.columns(2)
-        c1.metric("At Risk", analysis["counts"]["at_risk"])
-        c2.metric("Churned", analysis["counts"]["churned"])
-        
-        # Warn if member count mismatch
-        if expected_count > 0 and actual_count != expected_count:
-            st.warning(
-                f"Expected {expected_count} members but loaded {actual_count}. "
-                f"Some members may not have tracked stats yet."
-            )
+        c1.metric("Churned", analysis["counts"]["churned"])
+        c2.metric("Untracked", analysis["counts"].get("untracked", 0))
         
         if group:
             st.divider()
@@ -246,8 +239,8 @@ def main():
         with c1:
             status_filter = st.multiselect(
                 "Status",
-                ["active", "at_risk", "inactive", "churned"],
-                default=["active", "at_risk", "inactive", "churned"],
+                ["active", "at_risk", "inactive", "churned", "untracked"],
+                default=["active", "at_risk", "inactive", "churned", "untracked"],
             )
         with c2:
             sort_col = st.selectbox("Sort by", ["xp", "days_inactive", "ehp", "ehb", "username"])

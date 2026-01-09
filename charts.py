@@ -13,6 +13,7 @@ STATUS_COLORS = {
     "at_risk": "#f1c40f",
     "inactive": "#e67e22",
     "churned": "#e74c3c",
+    "untracked": "#6c757d",
 }
 
 
@@ -31,7 +32,7 @@ def activity_donut(counts: dict[str, int]) -> go.Figure:
     """Donut chart of activity distribution."""
     labels, values, colors = [], [], []
     
-    for status in ["active", "at_risk", "inactive", "churned"]:
+    for status in ["active", "at_risk", "inactive", "churned", "untracked"]:
         if counts.get(status, 0) > 0:
             labels.append(status.replace("_", " ").title())
             values.append(counts[status])

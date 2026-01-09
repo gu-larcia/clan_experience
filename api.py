@@ -65,22 +65,96 @@ class WOMClient:
         """
         return self._get(f"/groups/{group_id}/hiscores", params={"metric": metric})
 
-    def get_members(self, group_id: int) -> list[dict]:
+    def get_hiscores_csv(self, group_id: int, metric: str = "overall") -> str | None:
         """
-        Fetch all group members.
+        Fetch group hiscores as CSV. May include more data.
         
-        Tries /memberships first (returns all members with status),
-        falls back to /hiscores (only tracked members).
-        
-        Returns list of dicts with 'player' and optional 'membership' keys.
+        Returns raw CSV string or None on error.
         """
-        # Try memberships endpoint first (includes all members)
-        memberships = self.get_memberships(group_id)
-        if memberships is not None:
-            return memberships
+        url = f"{self.base_url}/groups/{group_id}/hiscores/csv"
+        try:
+            resp = self.session.get(url, params={"metric": metric}, timeout=30)
+            resp.raise_for_status()
+            return resp.text
+        except Exception:
+            return None
+
+    def get_members(self, group_id: int, include_untracked: bool = True) -> list[dict]:
+        """
+        Fetch all group members, including untracked ones.
         
-        # Fall back to hiscores (only tracked members)
-        return self.get_hiscores(group_id, metric="overall")
+        Strategy:
+        1. Fetch hiscores (members with tracked stats)
+        2. If include_untracked, fetch activity and derive full member list
+        3. Merge: tracked members get full data, untracked get placeholder
+        
+        Returns list of dicts with 'player' key. Untracked members have
+        player.status = 'untracked' and minimal data.
+        """
+        # Get tracked members from hiscores
+        tracked = self.get_hiscores(group_id, metric="overall")
+        tracked_names = {
+            m.get("player", {}).get("username", "").lower()
+            for m in tracked
+        }
+        
+        if not include_untracked:
+            return tracked
+        
+        # Derive full member list from activity
+        try:
+            activity = self.get_activity(group_id, limit=1000)
+        except Exception:
+            return tracked
+        
+        # Build current members from join/leave events
+        # Process oldest to newest
+        current_members = {}  # username -> {role, joinedAt}
+        for event in reversed(activity):
+            player = event.get("player", {})
+            username = player.get("username", "").lower()
+            display_name = player.get("displayName", player.get("username", "Unknown"))
+            event_type = event.get("type", "").lower()
+            role = event.get("role", "member")
+            created = event.get("createdAt")
+            
+            if event_type == "joined":
+                current_members[username] = {
+                    "displayName": display_name,
+                    "role": role,
+                    "joinedAt": created,
+                }
+            elif event_type in ("left", "kicked", "banned"):
+                current_members.pop(username, None)
+            elif event_type == "changed_role":
+                if username in current_members:
+                    current_members[username]["role"] = role
+        
+        # Build result: tracked members first, then untracked
+        result = list(tracked)
+        
+        for username, info in current_members.items():
+            if username not in tracked_names:
+                # Create placeholder for untracked member
+                result.append({
+                    "player": {
+                        "username": username,
+                        "displayName": info["displayName"],
+                        "status": "untracked",
+                        "exp": None,
+                        "ehp": None,
+                        "ehb": None,
+                        "lastChangedAt": None,
+                        "type": "unknown",
+                        "build": "unknown",
+                    },
+                    "membership": {
+                        "role": info["role"],
+                        "createdAt": info["joinedAt"],
+                    }
+                })
+        
+        return result
 
     def get_gains(self, group_id: int, metric: str = "overall", period: str = "week") -> list[dict]:
         """
