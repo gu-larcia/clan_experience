@@ -3,12 +3,12 @@
 # App metadata
 APP_TITLE = "Clan Analytics"
 APP_ICON = "⚔️"
-APP_VERSION = "2.0.0"
+APP_VERSION = "1.2.0"
 
 # WiseOldMan API
 # Docs: https://docs.wiseoldman.net/api
 WOM_BASE_URL = "https://api.wiseoldman.net/v2"
-WOM_USER_AGENT = "WOM-Clan-Dashboard/2.0"
+WOM_USER_AGENT = "WOM-Clan-Dashboard/1.2.0"
 
 # Default group - change this to your clan's group ID
 # Find yours at: https://wiseoldman.net/groups

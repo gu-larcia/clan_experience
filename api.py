@@ -2,14 +2,14 @@
 
 API docs: https://docs.wiseoldman.net/api
 
-Key endpoints used:
-    GET /groups/:id              - Group details
-    GET /groups/:id/hiscores     - All members with stats (no pagination)
+Key endpoints:
+    GET /groups/:id              - Group details (includes memberCount)
+    GET /groups/:id/memberships  - All members with membership status
+    GET /groups/:id/hiscores     - Members with tracked stats (no limit)
     GET /groups/:id/gained       - XP gains for all members
     GET /groups/:id/achievements - Recent achievements
+    GET /groups/:id/activity     - Join/leave/role change history
     GET /groups/:id/competitions - Group competitions
-
-Note: There is NO /groups/:id/members endpoint. Use /hiscores instead.
 """
 
 import requests
@@ -34,19 +34,53 @@ class WOMClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _try_get(self, endpoint: str, params: dict | None = None) -> Any | None:
+        """Execute GET request, return None on 404."""
+        try:
+            return self._get(endpoint, params)
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
     def get_group(self, group_id: int) -> dict:
-        """Fetch group details."""
+        """Fetch group details including memberCount."""
         return self._get(f"/groups/{group_id}")
+
+    def get_memberships(self, group_id: int) -> list[dict] | None:
+        """
+        Fetch all group memberships (if endpoint exists).
+        
+        Returns all members with their membership status, or None if 
+        endpoint doesn't exist.
+        """
+        return self._try_get(f"/groups/{group_id}/memberships")
+
+    def get_hiscores(self, group_id: int, metric: str = "overall") -> list[dict]:
+        """
+        Fetch group hiscores. Returns members who have tracked stats.
+        
+        Note: Only includes members whose stats have been tracked.
+        May not include all group members.
+        """
+        return self._get(f"/groups/{group_id}/hiscores", params={"metric": metric})
 
     def get_members(self, group_id: int) -> list[dict]:
         """
-        Fetch all group members via hiscores endpoint.
+        Fetch all group members.
         
-        Returns list of dicts with 'player' and 'data' keys.
-        The 'player' object contains: id, username, displayName, exp, ehp, ehb,
-        lastChangedAt, updatedAt, type, build, etc.
+        Tries /memberships first (returns all members with status),
+        falls back to /hiscores (only tracked members).
+        
+        Returns list of dicts with 'player' and optional 'membership' keys.
         """
-        return self._get(f"/groups/{group_id}/hiscores", params={"metric": "overall"})
+        # Try memberships endpoint first (includes all members)
+        memberships = self.get_memberships(group_id)
+        if memberships is not None:
+            return memberships
+        
+        # Fall back to hiscores (only tracked members)
+        return self.get_hiscores(group_id, metric="overall")
 
     def get_gains(self, group_id: int, metric: str = "overall", period: str = "week") -> list[dict]:
         """
@@ -65,6 +99,15 @@ class WOMClient:
     def get_competitions(self, group_id: int) -> list[dict]:
         """Fetch group competitions (past and current)."""
         return self._get(f"/groups/{group_id}/competitions")
+
+    def get_activity(self, group_id: int, limit: int = 100) -> list[dict]:
+        """
+        Fetch group activity feed.
+        
+        Returns join/leave/role change events. Useful for tracking
+        former members (kicked, banned, left).
+        """
+        return self._get(f"/groups/{group_id}/activity", params={"limit": limit})
 
 
 def parse_datetime(value: str | None) -> datetime | None:

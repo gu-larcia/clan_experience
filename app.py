@@ -61,7 +61,7 @@ def load_group(group_id: int) -> dict | None:
 
 @st.cache_data(ttl=config.CACHE_TTL_SHORT, show_spinner=False)
 def load_members(group_id: int) -> list:
-    """Load members via hiscores endpoint."""
+    """Load members via memberships or hiscores endpoint."""
     try:
         return get_client().get_members(group_id)
     except requests.HTTPError as e:
@@ -71,6 +71,15 @@ def load_members(group_id: int) -> list:
         return []
     except Exception as e:
         st.error(f"Error: {e}")
+        return []
+
+
+@st.cache_data(ttl=config.CACHE_TTL_SHORT, show_spinner=False)
+def load_activity(group_id: int, limit: int = 500) -> list:
+    """Load group activity feed (joins, leaves, kicks, bans)."""
+    try:
+        return get_client().get_activity(group_id, limit=limit)
+    except Exception:
         return []
 
 
@@ -160,13 +169,24 @@ def main():
         st.divider()
         st.subheader("Quick Stats")
         
+        # Show expected vs actual member count
+        expected_count = group.get("memberCount", 0) if group else 0
+        actual_count = analysis["total_members"]
+        
         c1, c2 = st.columns(2)
-        c1.metric("Total", analysis["total_members"])
+        c1.metric("Total", actual_count)
         c2.metric("Active", analysis["counts"]["active"])
         
         c1, c2 = st.columns(2)
         c1.metric("At Risk", analysis["counts"]["at_risk"])
         c2.metric("Churned", analysis["counts"]["churned"])
+        
+        # Warn if member count mismatch
+        if expected_count > 0 and actual_count != expected_count:
+            st.warning(
+                f"Expected {expected_count} members but loaded {actual_count}. "
+                f"Some members may not have tracked stats yet."
+            )
         
         if group:
             st.divider()
@@ -180,7 +200,7 @@ def main():
             )
     
     # Tabs
-    tabs = st.tabs(["📊 Overview", "👥 Members", "📈 Gains", "⚠️ Churn", "🏆 Achievements"])
+    tabs = st.tabs(["📊 Overview", "👥 Members", "📈 Gains", "⚠️ Churn", "🏆 Achievements", "📋 Activity"])
     
     # Overview tab
     with tabs[0]:
@@ -333,6 +353,119 @@ def main():
                 st.markdown(f"🏆 **{title}** — {name} ({time_str})")
         else:
             st.info("No recent achievements.")
+
+    # Activity tab
+    with tabs[5]:
+        st.header("Group Activity")
+        st.caption("Recent joins, leaves, kicks, and role changes")
+        
+        activity = load_activity(group_id, limit=500)
+        
+        if activity:
+            # Categorize activity
+            activity_types = {
+                "joined": [],
+                "left": [],
+                "kicked": [],
+                "banned": [],
+                "changed_role": [],
+                "other": [],
+            }
+            
+            for event in activity:
+                event_type = event.get("type", "").lower()
+                if event_type in activity_types:
+                    activity_types[event_type].append(event)
+                else:
+                    activity_types["other"].append(event)
+            
+            # Summary metrics
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Joined", len(activity_types["joined"]))
+            c2.metric("Left", len(activity_types["left"]))
+            c3.metric("Kicked", len(activity_types["kicked"]))
+            c4.metric("Banned", len(activity_types["banned"]))
+            
+            st.divider()
+            
+            # Filter options
+            c1, c2 = st.columns(2)
+            with c1:
+                type_filter = st.multiselect(
+                    "Event Type",
+                    ["joined", "left", "kicked", "banned", "changed_role"],
+                    default=["joined", "left", "kicked", "banned"],
+                )
+            with c2:
+                show_limit = st.number_input("Show recent", min_value=10, max_value=500, value=50)
+            
+            # Filter and display events
+            filtered_events = []
+            for t in type_filter:
+                filtered_events.extend(activity_types.get(t, []))
+            
+            # Sort by date descending
+            filtered_events.sort(
+                key=lambda x: x.get("createdAt", ""),
+                reverse=True
+            )
+            
+            if filtered_events:
+                for event in filtered_events[:show_limit]:
+                    player = event.get("player", {})
+                    name = player.get("displayName", "Unknown")
+                    event_type = event.get("type", "unknown")
+                    role = event.get("role", "")
+                    prev_role = event.get("previousRole", "")
+                    created = parse_datetime(event.get("createdAt"))
+                    time_str = created.strftime("%b %d, %Y") if created else "?"
+                    
+                    # Icon based on event type
+                    icons = {
+                        "joined": "🟢",
+                        "left": "🟡",
+                        "kicked": "🔴",
+                        "banned": "⛔",
+                        "changed_role": "🔄",
+                    }
+                    icon = icons.get(event_type, "⚪")
+                    
+                    # Format message
+                    if event_type == "changed_role":
+                        msg = f"{icon} **{name}** — {prev_role} → {role} ({time_str})"
+                    elif event_type == "joined" and role:
+                        msg = f"{icon} **{name}** joined as {role} ({time_str})"
+                    else:
+                        msg = f"{icon} **{name}** {event_type} ({time_str})"
+                    
+                    st.markdown(msg)
+                
+                if len(filtered_events) > show_limit:
+                    st.caption(f"Showing {show_limit} of {len(filtered_events)} events")
+            else:
+                st.info("No events match the selected filters.")
+            
+            # Former members summary
+            st.divider()
+            st.subheader("Former Members")
+            
+            former = activity_types["left"] + activity_types["kicked"] + activity_types["banned"]
+            if former:
+                former_names = set()
+                for event in former:
+                    player = event.get("player", {})
+                    name = player.get("displayName", "Unknown")
+                    former_names.add(name)
+                
+                st.write(f"**{len(former_names)}** unique players have left, been kicked, or banned.")
+                
+                with st.expander("View former member list"):
+                    for name in sorted(former_names):
+                        st.text(name)
+            else:
+                st.info("No former member data in recent activity.")
+        else:
+            st.info("No activity data available.")
 
 
 if __name__ == "__main__":
