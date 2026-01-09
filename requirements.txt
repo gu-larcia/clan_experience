@@ -1,4 +1,5 @@
-# WOM Clan Analytics Dashboard v1.0
+# WOM Clan Analytics Dashboard
+# Python 3.10+
 
 streamlit>=1.28.0
 pandas>=2.0.0

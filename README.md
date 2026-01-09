@@ -1,113 +1,85 @@
-# WiseOldMan Clan Analytics Dashboard
+# WOM Clan Analytics Dashboard
 
-A Streamlit dashboard for tracking OSRS clan activity, XP progression, and member churn using the [WiseOldMan](https://wiseoldman.net/) API.
+Streamlit dashboard for tracking OSRS clan activity via the [WiseOldMan](https://wiseoldman.net/) API.
 
 ## Features
 
-- **Activity Tracking**: Classify members as Active, At Risk, Inactive, or Churned based on last XP gain
-- **Clan Health Score**: Aggregate metric showing overall clan engagement
-- **XP Gains Analysis**: Track skill/boss gains over configurable time periods
-- **Churn Risk Detection**: Identify members who may be leaving the game
-- **Achievement Feed**: Recent milestones achieved by clan members
-- **Competition Tracking**: View active and past clan competitions
+- Activity classification (Active / At Risk / Inactive / Churned)
+- Clan health score
+- XP gains tracking by skill and time period
+- Churn risk detection
+- Achievement feed
 
-## Tech Stack
-
-- **Python 3.11+**
-- **Streamlit** - Interactive web dashboard
-- **Plotly** - Data visualization
-- **Pandas** - Data manipulation
-- **WiseOldMan API v2** - OSRS player/group data
-
-## Project Structure
-
-```
-wom_tracker/
-├── app.py                 # Main Streamlit application
-├── requirements.txt       # Python dependencies
-├── config/                # Application settings
-│   ├── __init__.py
-│   └── settings.py        # API URLs, cache TTLs, thresholds
-├── services/              # Business logic
-│   ├── __init__.py
-│   ├── api.py             # WiseOldMan API client
-│   └── activity.py        # Activity analysis & churn detection
-├── ui/                    # User interface
-│   ├── __init__.py
-│   ├── styles.py          # OSRS-themed CSS
-│   ├── charts.py          # Plotly chart functions
-│   └── components.py      # HTML components
-└── utils/                 # Utilities
-    ├── __init__.py
-    └── formatting.py      # XP/time formatting helpers
-```
-
-## Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd wom_tracker
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+# Clone and setup
+git clone <your-repo>
+cd wom_dashboard
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the app
+# Run locally
 streamlit run app.py
 ```
 
+Open http://localhost:8501 in your browser.
+
 ## Configuration
 
-### Environment Variables / Secrets
+Edit `config.py` to change:
 
-For higher API rate limits (100 req/min vs 20 req/min), add a WiseOldMan API key:
-
-**Local development** - Create `.streamlit/secrets.toml`:
-```toml
-WOM_API_KEY = "your-api-key-here"
-```
-
-**Streamlit Cloud** - Add to app secrets in the dashboard.
-
-### Changing the Tracked Clan
-
-Edit `config/settings.py`:
 ```python
-WOM_GROUP_ID = 11625  # Change to your group ID
+DEFAULT_GROUP_ID = 139  # Your WOM group ID
 ```
 
-Find your group ID on [wiseoldman.net/groups](https://wiseoldman.net/groups).
+Find your group ID at https://wiseoldman.net/groups
 
-### Activity Thresholds
+### API Key (Optional)
 
-Default classification thresholds (days since last XP gain):
-- **Active**: 0-7 days
-- **At Risk**: 8-30 days
-- **Inactive**: 31-90 days
-- **Churned**: 90+ days
+For higher rate limits (100 req/min vs 20 req/min), get an API key from the [WOM Discord](https://wiseoldman.net/discord).
 
-These can be adjusted in settings or via the sidebar.
+**Local development** — create `.streamlit/secrets.toml`:
 
-## API Rate Limits
+```toml
+WOM_API_KEY = "your-key-here"
+```
 
-WiseOldMan API limits:
-- **Without API key**: 20 requests per minute
-- **With API key**: 100 requests per minute
+**Streamlit Cloud** — add to app secrets in the dashboard.
 
-Request an API key via the [WOM Discord](https://discord.gg/wiseoldman).
+## Project Structure
+
+```
+wom_dashboard/
+├── app.py          # Main Streamlit app
+├── api.py          # WOM API client
+├── analysis.py     # Activity classification
+├── charts.py       # Plotly visualizations
+├── styles.py       # CSS theming
+├── config.py       # Settings
+└── requirements.txt
+```
+
+## API Notes
+
+The WOM API v2 does not have a `/groups/{id}/members` endpoint. Member data is retrieved via `/groups/{id}/hiscores?metric=overall`, which returns all members with no pagination limit.
+
+Key endpoints:
+- `GET /groups/{id}` — group details
+- `GET /groups/{id}/hiscores` — all members with stats
+- `GET /groups/{id}/gained` — XP gains
+- `GET /groups/{id}/achievements` — recent achievements
+
+Docs: https://docs.wiseoldman.net/api
 
 ## Deployment
 
-### Streamlit Cloud (Recommended)
+### Streamlit Cloud
 
-1. Push code to GitHub
-2. Connect repository to [Streamlit Cloud](https://streamlit.io/cloud)
-3. Add `WOM_API_KEY` to secrets (optional)
+1. Push to GitHub
+2. Connect repo at [share.streamlit.io](https://share.streamlit.io)
+3. Set `WOM_API_KEY` secret (optional)
 4. Deploy
 
 ### Docker
@@ -115,26 +87,11 @@ Request an API key via the [WOM Discord](https://discord.gg/wiseoldman).
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
 COPY . .
+RUN pip install -r requirements.txt
+EXPOSE 8501
 CMD ["streamlit", "run", "app.py", "--server.port=8501"]
 ```
-
-## Future Enhancements
-
-- [ ] PostgreSQL integration for historical data storage
-- [ ] Member comparison tools
-- [ ] Scheduled data refresh (GitHub Actions)
-- [ ] Discord webhook notifications for churn alerts
-- [ ] Individual player deep-dive pages
-- [ ] Export to CSV/Excel
-
-## Credits
-
-- [WiseOldMan](https://wiseoldman.net/) - Player tracking API
-- [OSRS Wiki](https://oldschool.runescape.wiki/) - Icons and game data
-- Design inspired by the OSRS aesthetic
 
 ## License
 
