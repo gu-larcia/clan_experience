@@ -12,7 +12,7 @@ WOM_USER_AGENT = "WOM-Clan-Dashboard/2.0"
 
 # Default group - change this to your clan's group ID
 # Find yours at: https://wiseoldman.net/groups
-DEFAULT_GROUP_ID = 139  # Example group from WOM docs
+DEFAULT_GROUP_ID = 11625  # Example group from WOM docs
 
 # Cache TTLs (seconds)
 CACHE_TTL_SHORT = 300   # 5 min - member data
