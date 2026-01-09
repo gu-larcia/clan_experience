@@ -1,4 +1,4 @@
-"""WiseOldMan API client."""
+"""WiseOldMan API client with correct v2 endpoints."""
 
 import requests
 from typing import Dict, List, Optional, Any
@@ -6,7 +6,17 @@ from datetime import datetime
 
 
 class WOMClient:
-    """Client for WiseOldMan API v2."""
+    """Client for WiseOldMan API v2.
+    
+    API docs: https://docs.wiseoldman.net/api
+    
+    Key endpoints:
+        /groups/:id          - group details
+        /groups/:id/hiscores - member rankings (returns ALL members)
+        /groups/:id/gained   - XP gains (returns ALL members)
+    
+    Note: /groups/:id/members does NOT exist in v2.
+    """
     
     def __init__(
         self, 
@@ -14,7 +24,7 @@ class WOMClient:
         api_key: Optional[str] = None,
         user_agent: str = "OSRS-Clan-Tracker/1.0"
     ):
-        self.base_url = base_url
+        self.base_url = base_url.rstrip('/')
         self._session = requests.Session()
         
         headers = {'User-Agent': user_agent}
@@ -36,6 +46,8 @@ class WOMClient:
         """
         Get group details including member count, description, etc.
         
+        Endpoint: GET /groups/:id
+        
         Returns: {
             id, name, clanChat, description, homeworld, verified,
             memberCount, createdAt, updatedAt, patron, profileImage, bannerImage
@@ -47,7 +59,10 @@ class WOMClient:
         """
         Get all group members with their current stats.
         
-        Uses the hiscores endpoint which returns all members with player data.
+        Uses /groups/:id/hiscores endpoint (NOT /members which doesn't exist).
+        This endpoint returns ALL members with no pagination limit.
+        
+        Endpoint: GET /groups/:id/hiscores?metric=overall
         
         Returns list of: {
             player: {id, username, displayName, type, build, country, status,
@@ -56,12 +71,11 @@ class WOMClient:
             data: {rank, level, experience}
         }
         """
-        # The hiscores endpoint returns all members with their stats
-        # It accepts a metric parameter (default: overall)
+        # IMPORTANT: Use /hiscores endpoint, NOT /members
+        # The /members endpoint does not exist in WOM API v2
         hiscores = self._get(f"/groups/{group_id}/hiscores", params={"metric": "overall"})
         
-        # Transform to match expected member format
-        # The hiscores response has player data, we need to add membership info
+        # Transform to standard member format with membership info
         members = []
         for entry in hiscores:
             player = entry.get("player", {})
@@ -85,6 +99,8 @@ class WOMClient:
         """
         Get group hiscores for a specific metric.
         
+        Endpoint: GET /groups/:id/hiscores?metric=:metric
+        
         Args:
             group_id: Group ID
             metric: Skill name or 'overall', 'ehp', 'ehb'
@@ -103,6 +119,8 @@ class WOMClient:
     ) -> List[Dict]:
         """
         Get XP/KC gains for group members over a time period.
+        
+        Endpoint: GET /groups/:id/gained?metric=:metric&period=:period
         
         Args:
             group_id: Group ID
@@ -126,6 +144,8 @@ class WOMClient:
         """
         Get recent group achievements.
         
+        Endpoint: GET /groups/:id/achievements?limit=:limit
+        
         Returns list of: {
             playerId, name, metric, threshold, accuracy, createdAt, player: {...}
         }
@@ -139,6 +159,8 @@ class WOMClient:
         """
         Get group competitions (past and current).
         
+        Endpoint: GET /groups/:id/competitions
+        
         Returns list of competition objects with participants.
         """
         return self._get(f"/groups/{group_id}/competitions")
@@ -150,6 +172,8 @@ class WOMClient:
     ) -> List[Dict]:
         """
         Get group activity feed (joins, leaves, role changes).
+        
+        Endpoint: GET /groups/:id/activity?limit=:limit
         
         Returns list of: {
             groupId, playerId, type, role, previousRole, createdAt, player: {...}
