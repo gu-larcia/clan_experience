@@ -1,4 +1,4 @@
-"""API access and analysis services."""
+"""API and analysis services."""
 
 from .api import WOMClient, parse_wom_datetime
 from .activity import (

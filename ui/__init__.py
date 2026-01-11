@@ -1,4 +1,4 @@
-"""UI styles, components, and charts."""
+"""UI components, charts, and styles."""
 
 from .styles import MODERN_CSS
 from .components import (

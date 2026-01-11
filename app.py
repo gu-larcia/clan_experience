@@ -1,7 +1,6 @@
 """WiseOldMan Clan Analytics Dashboard v2.0
 
-A modern, clean analytics dashboard for OSRS clan tracking.
-Now with full member roster support via API key authentication.
+Clan tracking and analysis using the WiseOldMan API.
 """
 
 import streamlit as st
@@ -34,38 +33,33 @@ from utils import (
     format_time_ago, format_date, role_display_name,
 )
 
-# Page config
+
 st.set_page_config(
     page_title=APP_TITLE,
-    page_icon=APP_ICON,
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Apply custom CSS
 st.markdown(MODERN_CSS, unsafe_allow_html=True)
 
 
-# ===== Cached Data Fetching =====
-
 @st.cache_resource
 def get_api_client() -> WOMClient:
-    """Get singleton API client with API key from Streamlit secrets."""
+    """Initialize singleton API client."""
     api_key = None
-    
-    # Load API key from Streamlit secrets only (never from code)
+
     try:
         api_key = st.secrets.get("WOM_API_KEY", None)
     except Exception:
-        # Secrets not configured
         pass
-    
+
     if not api_key:
         st.warning(
-            "⚠️ No API key configured. Running with limited rate limits (20 req/min). "
+            "No API key configured. Running with limited rate limits (20 req/min). "
             "Add WOM_API_KEY to Streamlit secrets for full access (100 req/min)."
         )
-    
+
     return WOMClient(
         base_url=WOM_API_BASE,
         api_key=api_key,
@@ -75,7 +69,7 @@ def get_api_client() -> WOMClient:
 
 @st.cache_data(ttl=CACHE_TTL_DETAILS, show_spinner=False)
 def fetch_group_details(_client: WOMClient, group_id: int) -> dict:
-    """Fetch group details."""
+    """Fetch group metadata."""
     try:
         return _client.get_group_details(group_id)
     except requests.exceptions.HTTPError as e:
@@ -88,13 +82,9 @@ def fetch_group_details(_client: WOMClient, group_id: int) -> dict:
 
 @st.cache_data(ttl=CACHE_TTL_MEMBERS, show_spinner=False)
 def fetch_members(_client: WOMClient, group_id: int) -> list:
-    """
-    Fetch ALL group members via hiscores endpoint.
-    With API key, this returns the complete member roster.
-    """
+    """Fetch all group members."""
     try:
-        members = _client.get_group_members(group_id)
-        return members
+        return _client.get_group_members(group_id)
     except requests.exceptions.HTTPError as e:
         st.error(f"API Error: {e.response.status_code} - {e.response.reason}")
         st.caption(f"URL: {e.response.url}")
@@ -119,140 +109,135 @@ def fetch_achievements(_client: WOMClient, group_id: int, limit: int = 25) -> li
     """Fetch recent achievements."""
     try:
         return _client.get_group_achievements(group_id, limit=limit)
-    except Exception as e:
+    except Exception:
         return []
 
 
 @st.cache_data(ttl=CACHE_TTL_DETAILS, show_spinner=False)
 def fetch_competitions(_client: WOMClient, group_id: int) -> list:
-    """Fetch competitions."""
+    """Fetch group competitions."""
     try:
         return _client.get_group_competitions(group_id)
-    except Exception as e:
+    except Exception:
         return []
 
 
 def main():
-    """Main application."""
-    
+    """Main application entry point."""
+
     # Header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title(f"{APP_ICON} {APP_TITLE}")
-        st.caption(f"v{APP_VERSION} • Clan activity and progression analytics")
+        st.title(APP_TITLE)
+        st.caption(f"v{APP_VERSION}")
     with col2:
         st.link_button(
-            "View on WOM →",
+            "View on WOM",
             f"https://wiseoldman.net/groups/{WOM_GROUP_ID}",
             use_container_width=True
         )
-    
-    # Initialize client and fetch data
+
     client = get_api_client()
     rate_limit_info = client.get_rate_limit_status()
-    
+
     with st.spinner("Loading clan data..."):
         group_details = fetch_group_details(client, WOM_GROUP_ID)
         members_raw = fetch_members(client, WOM_GROUP_ID)
-    
+
     if not members_raw:
-        st.error("Unable to load clan data. Please check your connection and try again.")
-        st.info("If using an API key, ensure it's correctly configured.")
+        st.error("Unable to load clan data. Check connection and try again.")
+        st.info("If using an API key, verify it is correctly configured.")
         return
-    
-    # Show API status
+
     st.markdown(
         render_api_status(rate_limit_info['has_api_key'], len(members_raw)),
         unsafe_allow_html=True
     )
-    
-    # Analyze activity
+
     analysis = analyze_clan_activity(members_raw, ACTIVITY_THRESHOLDS, ACTIVITY_COLORS)
-    
+
     # Sidebar
     with st.sidebar:
-        st.header("📋 Clan Info")
-        
+        st.header("Clan Info")
+
         if group_details:
             st.markdown(f"### {group_details.get('name', 'Unknown Clan')}")
             if group_details.get('description'):
                 st.caption(group_details['description'][:200])
-            
             st.divider()
-        
-        # Quick stats
+
         st.subheader("Quick Stats")
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Total", analysis['total_members'])
         with col2:
             st.metric("Active", analysis['status_counts']['active'])
-        
+
         col1, col2 = st.columns(2)
         with col1:
             st.metric("At Risk", analysis['status_counts']['at_risk'])
         with col2:
             st.metric("Churned", analysis['status_counts']['churned'])
-        
+
         st.divider()
-        
-        # Settings
-        st.subheader("⚙️ Settings")
-        
+
+        st.subheader("Settings")
+
         with st.expander("Activity Thresholds"):
             st.caption("Days to classify as:")
             active_days = st.number_input(
-                "Active", 
-                value=ACTIVITY_THRESHOLDS['active'], 
-                min_value=1, 
+                "Active",
+                value=ACTIVITY_THRESHOLDS['active'],
+                min_value=1,
                 max_value=30,
                 help="Members active within this many days"
             )
             at_risk_days = st.number_input(
-                "At Risk", 
-                value=ACTIVITY_THRESHOLDS['at_risk'], 
-                min_value=7, 
+                "At Risk",
+                value=ACTIVITY_THRESHOLDS['at_risk'],
+                min_value=7,
                 max_value=90,
                 help="Members inactive beyond 'active' but within this"
             )
             inactive_days = st.number_input(
-                "Inactive", 
-                value=ACTIVITY_THRESHOLDS['inactive'], 
-                min_value=30, 
+                "Inactive",
+                value=ACTIVITY_THRESHOLDS['inactive'],
+                min_value=30,
                 max_value=180,
                 help="Members inactive beyond 'at risk' but within this"
             )
-        
+
         st.divider()
-        
-        # Refresh button
-        if st.button("🔄 Refresh Data", use_container_width=True):
+
+        if st.button("Refresh Data", use_container_width=True):
             st.cache_data.clear()
-            st.toast("Data refreshed!")
+            st.toast("Data refreshed")
             st.rerun()
-        
+
         st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
-    
-    # Main content tabs
+
+    # Tabs
     tabs = st.tabs([
-        "📊 Overview",
-        "👥 Members",
-        "📈 XP Gains",
-        "⚠️ Churn Risk",
-        "🏆 Achievements",
+        "Overview",
+        "Members",
+        "XP Gains",
+        "Churn Risk",
+        "Achievements",
     ])
-    
-    # ===== Tab 1: Overview =====
+
+    # Tab 1: Overview
     with tabs[0]:
         st.header("Clan Overview")
-        
-        # Top row: Health score and key metrics
+
         col1, col2, col3, col4 = st.columns([1.5, 1, 1, 1])
-        
+
         with col1:
             st.markdown("#### Health Score")
-            st.markdown(render_health_score_display(analysis['health_score']), unsafe_allow_html=True)
-        
+            st.markdown(
+                render_health_score_display(analysis['health_score']),
+                unsafe_allow_html=True
+            )
+
         with col2:
             st.markdown(render_stat_card(
                 "Total XP",
@@ -260,7 +245,7 @@ def main():
                 f"Avg: {format_xp(analysis['avg_xp'])}",
                 "#3b82f6"
             ), unsafe_allow_html=True)
-        
+
         with col3:
             st.markdown(render_stat_card(
                 "Total EHP",
@@ -268,7 +253,7 @@ def main():
                 f"Avg: {format_hours(analysis['avg_ehp'])}",
                 "#8b5cf6"
             ), unsafe_allow_html=True)
-        
+
         with col4:
             st.markdown(render_stat_card(
                 "Total EHB",
@@ -276,40 +261,37 @@ def main():
                 f"Avg: {format_hours(analysis['avg_ehb'])}",
                 "#06b6d4"
             ), unsafe_allow_html=True)
-        
+
         st.divider()
-        
-        # Activity charts row
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             fig = create_activity_donut(analysis['status_counts'])
             st.plotly_chart(fig, use_container_width=True)
-        
+
         with col2:
             timeline = get_activity_timeline(analysis['members'])
             fig = create_activity_timeline(timeline)
             st.plotly_chart(fig, use_container_width=True)
-        
-        # Retention and role distribution
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             retention = calculate_retention_rates(analysis['members'], [7, 14, 30, 60, 90])
             fig = create_retention_chart(retention)
             st.plotly_chart(fig, use_container_width=True)
-        
+
         with col2:
             role_groups = group_by_role(analysis['members'])
             role_counts = {role: len(members) for role, members in role_groups.items()}
             fig = create_role_distribution(role_counts)
             st.plotly_chart(fig, use_container_width=True)
-    
-    # ===== Tab 2: Members =====
+
+    # Tab 2: Members
     with tabs[1]:
         st.header("All Members")
-        
-        # Filters
+
         col1, col2, col3 = st.columns(3)
         with col1:
             status_filter = st.multiselect(
@@ -330,17 +312,17 @@ def main():
                 "Sort by",
                 options=['Total XP', 'Last Active', 'EHP', 'EHB', 'Username'],
             )
-        
-        # Filter and sort members
+
         filtered_members = analysis['members']
-        
+
         if status_filter:
-            filtered_members = [m for m in filtered_members if m['activity_status'] in status_filter]
-        
+            filtered_members = [
+                m for m in filtered_members if m['activity_status'] in status_filter
+            ]
+
         if role_filter:
             filtered_members = [m for m in filtered_members if m['role'] in role_filter]
-        
-        # Sort
+
         sort_map = {
             'Total XP': ('exp', True),
             'Last Active': ('days_inactive', False),
@@ -349,13 +331,20 @@ def main():
             'Username': ('username', False),
         }
         sort_key, reverse = sort_map.get(sort_by, ('exp', True))
-        
+
         if sort_key == 'username':
-            filtered_members = sorted(filtered_members, key=lambda x: x.get(sort_key, '').lower(), reverse=reverse)
+            filtered_members = sorted(
+                filtered_members,
+                key=lambda x: x.get(sort_key, '').lower(),
+                reverse=reverse
+            )
         else:
-            filtered_members = sorted(filtered_members, key=lambda x: x.get(sort_key, 0) or 0, reverse=reverse)
-        
-        # Display as dataframe
+            filtered_members = sorted(
+                filtered_members,
+                key=lambda x: x.get(sort_key, 0) or 0,
+                reverse=reverse
+            )
+
         if filtered_members:
             df_data = []
             for m in filtered_members:
@@ -369,9 +358,9 @@ def main():
                     'EHB': round(m['ehb'], 1) if m['ehb'] else 0,
                     'Type': m['type'].title() if m['type'] else 'Regular',
                 })
-            
+
             df = pd.DataFrame(df_data)
-            
+
             st.dataframe(
                 df,
                 use_container_width=True,
@@ -387,13 +376,12 @@ def main():
                     'Type': st.column_config.TextColumn('Type'),
                 }
             )
-            
+
             st.caption(f"Showing {len(filtered_members)} of {len(analysis['members'])} members")
-        
-        # Distribution charts
+
         st.divider()
         st.subheader("Distribution Analysis")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             fig = create_xp_distribution(filtered_members)
@@ -401,11 +389,11 @@ def main():
         with col2:
             fig = create_ehp_vs_ehb_scatter(filtered_members)
             st.plotly_chart(fig, use_container_width=True)
-    
-    # ===== Tab 3: XP Gains =====
+
+    # Tab 3: XP Gains
     with tabs[2]:
         st.header("XP Gains")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             metric = st.selectbox(
@@ -420,18 +408,16 @@ def main():
                 index=GAIN_PERIODS.index(DEFAULT_GAIN_PERIOD),
                 format_func=lambda x: x.title()
             )
-        
+
         with st.spinner(f"Loading {metric} gains..."):
             gains = fetch_gains(client, WOM_GROUP_ID, metric, period)
-        
+
         if gains:
-            # Top gainers chart
             fig = create_xp_gains_chart(gains, metric)
             st.plotly_chart(fig, use_container_width=True)
-            
-            # Gains table
+
             st.subheader("All Gains")
-            
+
             gains_data = []
             for g in gains:
                 player = g.get('player', {})
@@ -444,11 +430,11 @@ def main():
                         'Start': data.get('start', 0),
                         'End': data.get('end', 0),
                     })
-            
+
             if gains_data:
                 gains_df = pd.DataFrame(gains_data)
                 gains_df = gains_df.sort_values('Gained', ascending=False)
-                
+
                 st.dataframe(
                     gains_df,
                     use_container_width=True,
@@ -460,12 +446,11 @@ def main():
                         'End': st.column_config.NumberColumn('End XP', format='%d'),
                     }
                 )
-                
-                # Summary stats
+
                 total_gained = sum(g['Gained'] for g in gains_data)
                 avg_gained = total_gained / len(gains_data) if gains_data else 0
                 active_gainers = len([g for g in gains_data if g['Gained'] > 0])
-                
+
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Total Gained", format_xp(total_gained))
@@ -475,44 +460,42 @@ def main():
                     st.metric("Active Gainers", f"{active_gainers}/{len(gains)}")
         else:
             st.info("No gain data available for this period.")
-    
-    # ===== Tab 4: Churn Risk =====
+
+    # Tab 4: Churn Risk
     with tabs[3]:
         st.header("Churn Risk Analysis")
-        
-        st.markdown("""
-        Members shown here haven't been active recently and may be at risk of leaving.
-        Consider reaching out to re-engage them.
-        """)
-        
+
+        st.markdown(
+            "Members shown here have not been active recently and may be at risk of leaving. "
+            "Consider outreach to re-engage them."
+        )
+
         col1, col2 = st.columns(2)
         with col1:
             min_days = st.slider("Minimum days inactive", 7, 60, 14)
         with col2:
             max_days = st.slider("Maximum days inactive", 30, 180, 90)
-        
+
         at_risk = get_churn_risk_members(analysis['members'], min_days, max_days)
-        
+
         if at_risk:
-            st.subheader(f"⚠️ {len(at_risk)} Members at Risk")
-            
-            # Priority breakdown
+            st.subheader(f"{len(at_risk)} Members at Risk")
+
             high_risk = [m for m in at_risk if m['days_inactive'] > 45]
             medium_risk = [m for m in at_risk if 30 < m['days_inactive'] <= 45]
             low_risk = [m for m in at_risk if m['days_inactive'] <= 30]
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("🔴 High Risk (45+ days)", len(high_risk))
+                st.metric("High Risk (45+ days)", len(high_risk))
             with col2:
-                st.metric("🟠 Medium Risk (31-45 days)", len(medium_risk))
+                st.metric("Medium Risk (31-45 days)", len(medium_risk))
             with col3:
-                st.metric("🟡 Low Risk (14-30 days)", len(low_risk))
-            
+                st.metric("Low Risk (14-30 days)", len(low_risk))
+
             st.divider()
-            
-            # Display at-risk members
-            for member in at_risk[:25]:  # Limit display
+
+            for member in at_risk[:25]:
                 st.markdown(
                     render_at_risk_card(
                         username=member['username'],
@@ -522,23 +505,23 @@ def main():
                     ),
                     unsafe_allow_html=True
                 )
-            
+
             if len(at_risk) > 25:
                 st.caption(f"Showing 25 of {len(at_risk)} at-risk members")
         else:
-            st.success("🎉 No members currently at significant churn risk!")
-    
-    # ===== Tab 5: Achievements =====
+            st.success("No members currently at significant churn risk.")
+
+    # Tab 5: Achievements
     with tabs[4]:
         st.header("Recent Achievements")
-        
+
         achievements = fetch_achievements(client, WOM_GROUP_ID, limit=50)
-        
+
         if achievements:
             for ach in achievements[:30]:
                 player = ach.get('player', {})
                 created = parse_wom_datetime(ach.get('createdAt'))
-                
+
                 st.markdown(
                     render_achievement_card(
                         player_name=player.get('displayName', 'Unknown'),
@@ -551,38 +534,39 @@ def main():
                 )
         else:
             st.info("No recent achievements to display.")
-        
-        # Competitions section
+
         st.divider()
         st.subheader("Competitions")
-        
+
         competitions = fetch_competitions(client, WOM_GROUP_ID)
-        
+
         if competitions:
             active_comps = [
-                c for c in competitions 
-                if c.get('endsAt') and parse_wom_datetime(c['endsAt']) 
+                c for c in competitions
+                if c.get('endsAt') and parse_wom_datetime(c['endsAt'])
                 and parse_wom_datetime(c['endsAt']) > datetime.now(timezone.utc)
             ]
             past_comps = [c for c in competitions if c not in active_comps][:5]
-            
+
             if active_comps:
-                st.markdown("#### 🏃 Active Competitions")
+                st.markdown("#### Active Competitions")
                 for comp in active_comps:
                     ends_at = parse_wom_datetime(comp.get('endsAt'))
-                    st.markdown(f"""
-                    **{comp.get('title', 'Competition')}**  
-                    Metric: {comp.get('metric', 'unknown').title()} | Ends: {format_date(ends_at, include_time=True)}
-                    """)
-            
+                    st.markdown(
+                        f"**{comp.get('title', 'Competition')}**  \n"
+                        f"Metric: {comp.get('metric', 'unknown').title()} | "
+                        f"Ends: {format_date(ends_at, include_time=True)}"
+                    )
+
             if past_comps:
-                st.markdown("#### 📜 Recent Competitions")
+                st.markdown("#### Recent Competitions")
                 for comp in past_comps:
                     ended_at = parse_wom_datetime(comp.get('endsAt'))
-                    st.markdown(f"""
-                    **{comp.get('title', 'Competition')}**  
-                    Metric: {comp.get('metric', 'unknown').title()} | Ended: {format_time_ago(ended_at)}
-                    """)
+                    st.markdown(
+                        f"**{comp.get('title', 'Competition')}**  \n"
+                        f"Metric: {comp.get('metric', 'unknown').title()} | "
+                        f"Ended: {format_time_ago(ended_at)}"
+                    )
         else:
             st.info("No competitions found.")
 

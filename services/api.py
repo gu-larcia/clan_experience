@@ -1,16 +1,15 @@
-"""WiseOldMan API client v2.0 - Full member roster support."""
+"""WiseOldMan API client with pagination support."""
 
 import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-import time
 
 
 class WOMClient:
-    """Client for WiseOldMan API v2 with full pagination support."""
-    
+    """Client for WiseOldMan API v2."""
+
     def __init__(
-        self, 
+        self,
         base_url: str = "https://api.wiseoldman.net/v2",
         api_key: Optional[str] = None,
         user_agent: str = "Clan-Analytics-Dashboard/2.0"
@@ -18,52 +17,45 @@ class WOMClient:
         self.base_url = base_url
         self._session = requests.Session()
         self.api_key = api_key
-        
+
         headers = {'User-Agent': user_agent}
         if api_key:
             headers['x-api-key'] = api_key
-        
+
         self._session.headers.update(headers)
-    
+
     def _get(self, endpoint: str, params: Optional[Dict] = None) -> Any:
-        """Make GET request to API."""
+        """Execute GET request."""
         url = f"{self.base_url}{endpoint}"
         response = self._session.get(url, params=params, timeout=30)
         response.raise_for_status()
         return response.json()
-    
-    # ===== Group Endpoints =====
-    
+
     def get_group_details(self, group_id: int) -> Dict:
         """
-        Get group details including member count, description, etc.
-        
-        Returns: {
-            id, name, clanChat, description, homeworld, verified,
-            memberCount, createdAt, updatedAt, patron, profileImage, bannerImage
-        }
+        Fetch group metadata.
+
+        Returns dict with: id, name, clanChat, description, homeworld,
+        verified, memberCount, createdAt, updatedAt, patron, profileImage,
+        bannerImage
         """
         return self._get(f"/groups/{group_id}")
-    
+
     def get_group_members(self, group_id: int) -> List[Dict]:
         """
-        Get ALL group members with their current stats.
-        
-        Uses the hiscores endpoint which returns all members sorted by XP.
-        The WOM API returns all members in a single response for hiscores.
-        
-        Returns list of: {
-            player: {id, username, displayName, type, build, country, status,
-                     patron, exp, ehp, ehb, ttm, tt200m, registeredAt, updatedAt,
-                     lastChangedAt, lastImportedAt},
-            membership: {playerId, groupId, role, createdAt, updatedAt}
-        }
+        Fetch all group members with current stats.
+
+        Uses the hiscores endpoint which returns all members ranked by XP.
+        The WOM API returns complete member lists without pagination limits
+        when using the hiscores endpoint.
+
+        Returns list of dicts with player data and membership info.
         """
-        # The hiscores endpoint returns ALL members with their stats
-        # No pagination needed - it returns the complete list
-        hiscores = self._get(f"/groups/{group_id}/hiscores", params={"metric": "overall"})
-        
-        # Transform to include membership info
+        hiscores = self._get(
+            f"/groups/{group_id}/hiscores",
+            params={"metric": "overall"}
+        )
+
         members = []
         for entry in hiscores:
             player = entry.get("player", {})
@@ -78,41 +70,53 @@ class WOMClient:
                 }
             })
         return members
-    
-    def get_group_members_detailed(self, group_id: int) -> List[Dict]:
+
+    def get_group_members_paginated(self, group_id: int) -> List[Dict]:
         """
-        Alternative method using the dedicated members endpoint.
-        This endpoint returns member data with role information.
-        
-        Useful as a fallback if hiscores doesn't return all data needed.
+        Fetch all members using pagination on the members endpoint.
+
+        Use this as a fallback if hiscores endpoint does not return all
+        members. Fetches in batches of 50 until no more results.
         """
-        try:
-            # Try the members endpoint directly
-            response = self._get(f"/groups/{group_id}/members")
-            return response if isinstance(response, list) else response.get("members", [])
-        except Exception:
-            # Fall back to hiscores if members endpoint fails
-            return self.get_group_members(group_id)
-    
+        all_members = []
+        offset = 0
+        limit = 50
+
+        while True:
+            response = self._get(
+                f"/groups/{group_id}/members",
+                params={"limit": limit, "offset": offset}
+            )
+
+            members = response if isinstance(response, list) else response.get("members", [])
+
+            if not members:
+                break
+
+            all_members.extend(members)
+            offset += limit
+
+            # Safety check to avoid infinite loops
+            if len(members) < limit:
+                break
+
+        return all_members
+
     def get_group_hiscores(
-        self, 
-        group_id: int, 
+        self,
+        group_id: int,
         metric: str = "overall"
     ) -> List[Dict]:
         """
-        Get group hiscores for a specific metric.
-        Returns ALL members ranked by the specified metric.
-        
-        Args:
-            group_id: Group ID
-            metric: Skill name or 'overall', 'ehp', 'ehb'
-            
-        Returns list of: {
-            player: {...}, data: {rank, level/kills/score, experience/value}
-        }
+        Fetch group hiscores for a metric.
+
+        Returns all members ranked by the specified metric.
         """
-        return self._get(f"/groups/{group_id}/hiscores", params={"metric": metric})
-    
+        return self._get(
+            f"/groups/{group_id}/hiscores",
+            params={"metric": metric}
+        )
+
     def get_group_gains(
         self,
         group_id: int,
@@ -120,132 +124,89 @@ class WOMClient:
         period: str = "week"
     ) -> List[Dict]:
         """
-        Get XP/KC gains for group members over a time period.
-        Returns ALL members with gains data.
-        
+        Fetch XP/KC gains over a time period.
+
         Args:
             group_id: Group ID
             metric: Skill name, boss name, or 'overall', 'ehp', 'ehb'
             period: 'day', 'week', 'month', 'year'
-            
-        Returns list of: {
-            player: {...}, data: {gained, start, end}
-        }
+
+        Returns list with player data and gains info.
         """
         return self._get(
             f"/groups/{group_id}/gained",
             params={"metric": metric, "period": period}
         )
-    
+
     def get_group_achievements(
         self,
         group_id: int,
         limit: int = 50
     ) -> List[Dict]:
-        """
-        Get recent group achievements.
-        
-        Returns list of: {
-            playerId, name, metric, threshold, accuracy, createdAt, player: {...}
-        }
-        """
+        """Fetch recent group achievements."""
         return self._get(
             f"/groups/{group_id}/achievements",
             params={"limit": limit}
         )
-    
+
     def get_group_competitions(self, group_id: int) -> List[Dict]:
-        """
-        Get group competitions (past and current).
-        
-        Returns list of competition objects with participants.
-        """
+        """Fetch group competitions."""
         return self._get(f"/groups/{group_id}/competitions")
-    
+
     def get_group_activity(
         self,
         group_id: int,
         limit: int = 50
     ) -> List[Dict]:
-        """
-        Get group activity feed (joins, leaves, role changes).
-        
-        Returns list of: {
-            groupId, playerId, type, role, previousRole, createdAt, player: {...}
-        }
-        """
+        """Fetch group activity feed (joins, leaves, role changes)."""
         return self._get(
             f"/groups/{group_id}/activity",
             params={"limit": limit}
         )
-    
-    # ===== Player Endpoints =====
-    
+
     def get_player(self, username: str) -> Dict:
-        """Get player details by username."""
+        """Fetch player details by username."""
         return self._get(f"/players/{username}")
-    
+
     def get_player_gains(
         self,
         username: str,
         period: str = "week"
     ) -> Dict:
-        """
-        Get player XP gains over a period.
-        
-        Returns: {startsAt, endsAt, data: {skills: {...}, bosses: {...}, ...}}
-        """
+        """Fetch player XP gains over a period."""
         return self._get(
             f"/players/{username}/gained",
             params={"period": period}
         )
-    
+
     def get_player_snapshots(
         self,
         username: str,
         period: str = "week"
     ) -> List[Dict]:
-        """
-        Get player snapshot history.
-        
-        Returns list of snapshot objects with full stats at each point.
-        """
+        """Fetch player snapshot history."""
         return self._get(
             f"/players/{username}/snapshots",
             params={"period": period}
         )
-    
+
     def update_player(self, username: str) -> Dict:
         """
-        Request a player update (fetches latest from hiscores).
-        
-        IMPORTANT: Per WOM guidelines, use sparingly (1-6 hour intervals)
-        to avoid IP bans. This counts heavily against rate limits.
+        Request player update from hiscores.
+
+        Use sparingly (1-6 hour intervals) to avoid IP bans.
         """
         url = f"{self.base_url}/players/{username}"
         response = self._session.post(url, timeout=30)
         response.raise_for_status()
         return response.json()
-    
-    # ===== Utility Methods =====
-    
+
     def search_groups(self, name: str, limit: int = 20) -> List[Dict]:
-        """Search for groups by name."""
+        """Search groups by name."""
         return self._get("/groups", params={"name": name, "limit": limit})
-    
-    def get_global_leaderboard(
-        self,
-        metric: str = "overall",
-        player_type: str = "regular"
-    ) -> List[Dict]:
-        """Get global hiscores."""
-        return self._get(
-            "/players",
-            params={"metric": metric, "playerType": player_type}
-        )
-    
+
     def get_rate_limit_status(self) -> Dict[str, str]:
-        """Return info about API key status."""
+        """Return API key status info."""
         return {
             "has_api_key": bool(self.api_key),
             "rate_limit": "100 req/min" if self.api_key else "20 req/min",
@@ -256,10 +217,8 @@ def parse_wom_datetime(dt_string: Optional[str]) -> Optional[datetime]:
     """Parse WOM API datetime string to datetime object."""
     if not dt_string:
         return None
-    
-    # WOM uses ISO format with Z suffix
+
     try:
-        # Handle both formats
         if dt_string.endswith('Z'):
             dt_string = dt_string[:-1] + '+00:00'
         return datetime.fromisoformat(dt_string)

@@ -1,14 +1,14 @@
-"""Activity analysis and churn classification service."""
+"""Activity analysis and churn classification."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 
 @dataclass
 class ActivityStatus:
-    """Player activity classification."""
-    status: str          # active, at_risk, inactive, churned
+    """Player activity classification result."""
+    status: str
     days_inactive: int
     last_activity: Optional[datetime]
     color: str
@@ -22,14 +22,14 @@ def classify_activity(
 ) -> ActivityStatus:
     """
     Classify player activity based on last XP gain.
-    
+
     Args:
         last_changed_at: Datetime of last recorded XP change
-        thresholds: Dict with 'active', 'at_risk', 'inactive', 'churned' day counts
-        colors: Dict mapping status to color hex codes
-        
+        thresholds: Day counts for 'active', 'at_risk', 'inactive', 'churned'
+        colors: Hex colors mapped to each status
+
     Returns:
-        ActivityStatus with classification details
+        ActivityStatus with classification data
     """
     if not last_changed_at:
         return ActivityStatus(
@@ -39,15 +39,14 @@ def classify_activity(
             color=colors.get("unknown", "#6b7280"),
             description="No activity data"
         )
-    
+
     now = datetime.now(timezone.utc)
-    
-    # Ensure last_changed_at is timezone-aware
+
     if last_changed_at.tzinfo is None:
         last_changed_at = last_changed_at.replace(tzinfo=timezone.utc)
-    
+
     days_inactive = (now - last_changed_at).days
-    
+
     if days_inactive <= thresholds["active"]:
         status = "active"
         description = f"Active ({days_inactive}d ago)"
@@ -60,7 +59,7 @@ def classify_activity(
     else:
         status = "churned"
         description = f"Churned ({days_inactive}d)"
-    
+
     return ActivityStatus(
         status=status,
         days_inactive=days_inactive,
@@ -76,47 +75,39 @@ def analyze_clan_activity(
     colors: Dict[str, str]
 ) -> Dict:
     """
-    Analyze activity patterns across entire clan.
-    
-    Args:
-        members: List of member dicts from WOM API
-        thresholds: Activity thresholds
-        colors: Status colors
-        
-    Returns:
-        Dict with counts, percentages, and member classifications
+    Analyze activity patterns across all members.
+
+    Returns dict with counts, percentages, member classifications,
+    aggregated XP/EHP/EHB totals, and health score.
     """
     from .api import parse_wom_datetime
-    
+
     classifications = []
     status_counts = {
         "active": 0,
-        "at_risk": 0, 
+        "at_risk": 0,
         "inactive": 0,
         "churned": 0,
         "unknown": 0
     }
-    
+
     total_xp = 0
     total_ehp = 0
     total_ehb = 0
-    
+
     for member in members:
         player = member.get("player", {})
         membership = member.get("membership", {})
-        
-        # Parse last activity timestamp
+
         last_changed = parse_wom_datetime(player.get("lastChangedAt"))
-        
-        # Classify activity
+
         activity = classify_activity(last_changed, thresholds, colors)
         status_counts[activity.status] += 1
-        
-        # Aggregate stats
+
         total_xp += player.get("exp", 0) or 0
         total_ehp += player.get("ehp", 0) or 0
         total_ehb += player.get("ehb", 0) or 0
-        
+
         classifications.append({
             "username": player.get("displayName", player.get("username", "Unknown")),
             "player_id": player.get("id"),
@@ -133,9 +124,9 @@ def analyze_clan_activity(
             "status_description": activity.description,
             "joined_at": parse_wom_datetime(membership.get("createdAt")),
         })
-    
+
     total_members = len(members)
-    
+
     return {
         "total_members": total_members,
         "status_counts": status_counts,
@@ -156,17 +147,13 @@ def analyze_clan_activity(
 
 def calculate_health_score(status_counts: Dict[str, int], total: int) -> float:
     """
-    Calculate overall clan health score (0-100).
-    
-    Weights:
-    - Active: 100 points
-    - At Risk: 50 points  
-    - Inactive: 20 points
-    - Churned: 0 points
+    Calculate clan health score (0-100).
+
+    Weights: active=100, at_risk=50, inactive=20, churned=0, unknown=25
     """
     if total == 0:
         return 0.0
-    
+
     weights = {
         "active": 100,
         "at_risk": 50,
@@ -174,12 +161,12 @@ def calculate_health_score(status_counts: Dict[str, int], total: int) -> float:
         "churned": 0,
         "unknown": 25,
     }
-    
+
     score = sum(
         status_counts.get(status, 0) * weight
         for status, weight in weights.items()
     )
-    
+
     return score / total
 
 
@@ -189,40 +176,43 @@ def get_churn_risk_members(
     max_days: int = 60
 ) -> List[Dict]:
     """
-    Get members who are at risk of churning (intervention candidates).
-    
+    Get members at risk of churning (intervention candidates).
+
     Args:
         members: Classified member list
-        min_days: Minimum days inactive to be considered at risk
-        max_days: Maximum days (beyond this they're already churned)
-        
-    Returns:
-        List of at-risk members sorted by days inactive
+        min_days: Minimum days inactive to include
+        max_days: Maximum days (beyond this they are already churned)
+
+    Returns list sorted by days inactive descending.
     """
     at_risk = [
         m for m in members
         if min_days <= m.get("days_inactive", 0) <= max_days
     ]
-    
+
     return sorted(at_risk, key=lambda x: x.get("days_inactive", 0), reverse=True)
 
 
 def calculate_retention_rates(
     members: List[Dict],
-    periods: List[int] = [7, 30, 90]
+    periods: List[int] = None
 ) -> Dict[int, float]:
     """
-    Calculate retention rates at different day thresholds.
-    
-    Returns: {7: 85.2, 30: 72.1, 90: 58.4} (percentages)
+    Calculate retention rates at day thresholds.
+
+    Returns dict mapping days to percentage retained.
+    Example: {7: 85.2, 30: 72.1, 90: 58.4}
     """
+    if periods is None:
+        periods = [7, 30, 90]
+
     total = len(members)
     if total == 0:
         return {p: 0.0 for p in periods}
-    
+
     return {
         days: sum(
-            1 for m in members 
+            1 for m in members
             if m.get("days_inactive", 999) <= days
         ) / total * 100
         for days in periods
@@ -230,7 +220,7 @@ def calculate_retention_rates(
 
 
 def group_by_role(members: List[Dict]) -> Dict[str, List[Dict]]:
-    """Group members by their clan role."""
+    """Group members by clan role."""
     roles = {}
     for member in members:
         role = member.get("role", "member")
@@ -245,9 +235,9 @@ def get_activity_timeline(
     bucket_days: int = 7
 ) -> List[Dict]:
     """
-    Create timeline buckets of when members were last active.
-    
-    Returns list of: {bucket: "0-7 days", count: 45, percentage: 32.1}
+    Create timeline buckets by last activity date.
+
+    Returns list of dicts with bucket label, count, and percentage.
     """
     buckets = [
         (0, 7, "0-7 days"),
@@ -259,10 +249,10 @@ def get_activity_timeline(
         (181, 365, "181-365 days"),
         (366, 9999, "1+ year"),
     ]
-    
+
     total = len(members)
     timeline = []
-    
+
     for min_d, max_d, label in buckets:
         count = sum(
             1 for m in members
@@ -275,5 +265,5 @@ def get_activity_timeline(
             "count": count,
             "percentage": (count / total * 100) if total > 0 else 0
         })
-    
+
     return timeline

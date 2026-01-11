@@ -1,11 +1,8 @@
-"""Modern Plotly charts for clan analytics."""
+"""Plotly chart generators for clan analytics."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 import plotly.graph_objects as go
-import plotly.express as px
-from datetime import datetime
 
-# Modern chart color scheme
 CHART_COLORS = {
     'primary': '#3b82f6',
     'secondary': '#8b5cf6',
@@ -23,24 +20,24 @@ CHART_COLORS = {
 
 
 def create_activity_donut(status_counts: Dict[str, int]) -> go.Figure:
-    """Create donut chart showing activity distribution."""
+    """Create donut chart of activity distribution."""
     labels = []
     values = []
     colors = []
-    
+
     status_config = {
         'active': ('Active', CHART_COLORS['active']),
         'at_risk': ('At Risk', CHART_COLORS['at_risk']),
         'inactive': ('Inactive', CHART_COLORS['inactive']),
         'churned': ('Churned', CHART_COLORS['churned']),
     }
-    
+
     for status, (label, color) in status_config.items():
         if status_counts.get(status, 0) > 0:
             labels.append(label)
             values.append(status_counts[status])
             colors.append(color)
-    
+
     fig = go.Figure(data=[
         go.Pie(
             labels=labels,
@@ -56,7 +53,7 @@ def create_activity_donut(status_counts: Dict[str, int]) -> go.Figure:
             hovertemplate='<b>%{label}</b><br>Members: %{value}<br>Share: %{percent}<extra></extra>'
         )
     ])
-    
+
     total = sum(values)
     fig.add_annotation(
         text=f"<b>{total}</b><br><span style='font-size:12px'>Members</span>",
@@ -64,7 +61,7 @@ def create_activity_donut(status_counts: Dict[str, int]) -> go.Figure:
         font=dict(color=CHART_COLORS['text'], size=24, family='Inter'),
         showarrow=False
     )
-    
+
     fig.update_layout(
         title=dict(
             text="Activity Distribution",
@@ -77,16 +74,15 @@ def create_activity_donut(status_counts: Dict[str, int]) -> go.Figure:
         showlegend=False,
         margin=dict(l=20, r=20, t=60, b=20),
     )
-    
+
     return fig
 
 
 def create_activity_timeline(timeline_data: List[Dict]) -> go.Figure:
-    """Create bar chart showing member distribution by inactivity period."""
+    """Create bar chart of member distribution by inactivity period."""
     buckets = [d['bucket'] for d in timeline_data]
     counts = [d['count'] for d in timeline_data]
-    
-    # Color gradient from green to red
+
     gradient = [
         CHART_COLORS['active'],
         '#22c55e',
@@ -97,7 +93,7 @@ def create_activity_timeline(timeline_data: List[Dict]) -> go.Figure:
         CHART_COLORS['churned'],
         '#991b1b',
     ][:len(buckets)]
-    
+
     fig = go.Figure(data=[
         go.Bar(
             x=buckets,
@@ -111,7 +107,7 @@ def create_activity_timeline(timeline_data: List[Dict]) -> go.Figure:
             hovertemplate='<b>%{x}</b><br>Members: %{y}<extra></extra>'
         )
     ])
-    
+
     fig.update_layout(
         title=dict(
             text="Members by Last Activity",
@@ -135,26 +131,28 @@ def create_activity_timeline(timeline_data: List[Dict]) -> go.Figure:
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
     )
-    
+
     return fig
 
 
 def create_xp_gains_chart(gains_data: List[Dict], metric: str = "overall") -> go.Figure:
     """Create horizontal bar chart of top XP gainers."""
-    # Sort by gained XP
-    sorted_data = sorted(gains_data, key=lambda x: x.get('data', {}).get('gained', 0), reverse=True)[:15]
-    
+    sorted_data = sorted(
+        gains_data,
+        key=lambda x: x.get('data', {}).get('gained', 0),
+        reverse=True
+    )[:15]
+
     usernames = [d.get('player', {}).get('displayName', 'Unknown') for d in sorted_data]
     gains = [d.get('data', {}).get('gained', 0) for d in sorted_data]
-    
-    # Format XP values for display
+
     def format_xp(val):
         if val >= 1_000_000:
             return f"{val/1_000_000:.1f}M"
         elif val >= 1_000:
             return f"{val/1_000:.0f}K"
         return str(int(val))
-    
+
     fig = go.Figure(data=[
         go.Bar(
             x=gains,
@@ -169,7 +167,7 @@ def create_xp_gains_chart(gains_data: List[Dict], metric: str = "overall") -> go
             hovertemplate='<b>%{y}</b><br>XP Gained: %{x:,.0f}<extra></extra>'
         )
     ])
-    
+
     fig.update_layout(
         title=dict(
             text=f"Top {metric.title()} XP Gainers",
@@ -193,18 +191,17 @@ def create_xp_gains_chart(gains_data: List[Dict], metric: str = "overall") -> go
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
     )
-    
+
     return fig
 
 
 def create_role_distribution(role_counts: Dict[str, int]) -> go.Figure:
     """Create horizontal bar chart of member roles."""
-    # Sort by count
     sorted_roles = sorted(role_counts.items(), key=lambda x: x[1], reverse=True)[:12]
-    
+
     labels = [r[0].replace('_', ' ').title() for r in sorted_roles]
     values = [r[1] for r in sorted_roles]
-    
+
     fig = go.Figure(data=[
         go.Bar(
             x=values,
@@ -219,7 +216,7 @@ def create_role_distribution(role_counts: Dict[str, int]) -> go.Figure:
             hovertemplate='<b>%{y}</b><br>Members: %{x}<extra></extra>'
         )
     ])
-    
+
     fig.update_layout(
         title=dict(
             text="Member Roles",
@@ -242,18 +239,17 @@ def create_role_distribution(role_counts: Dict[str, int]) -> go.Figure:
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
     )
-    
+
     return fig
 
 
 def create_retention_chart(retention_rates: Dict[int, float]) -> go.Figure:
-    """Create line chart showing retention at different day thresholds."""
+    """Create line chart of retention at day thresholds."""
     days = list(retention_rates.keys())
     rates = list(retention_rates.values())
-    
+
     fig = go.Figure()
-    
-    # Add gradient fill
+
     fig.add_trace(go.Scatter(
         x=days,
         y=rates,
@@ -263,8 +259,7 @@ def create_retention_chart(retention_rates: Dict[int, float]) -> go.Figure:
         fillcolor='rgba(59, 130, 246, 0.2)',
         hovertemplate='<b>Day %{x}</b><br>Retention: %{y:.1f}%<extra></extra>'
     ))
-    
-    # Add markers
+
     fig.add_trace(go.Scatter(
         x=days,
         y=rates,
@@ -276,17 +271,16 @@ def create_retention_chart(retention_rates: Dict[int, float]) -> go.Figure:
         showlegend=False,
         hoverinfo='skip'
     ))
-    
-    # Add 50% benchmark line
+
     fig.add_hline(
-        y=50, 
-        line_dash="dash", 
+        y=50,
+        line_dash="dash",
         line_color="rgba(148, 163, 184, 0.5)",
         annotation_text="50% benchmark",
         annotation_position="right",
         annotation_font=dict(color=CHART_COLORS['text_secondary'], size=10, family='Inter')
     )
-    
+
     fig.update_layout(
         title=dict(
             text="Retention Rate by Day",
@@ -314,14 +308,14 @@ def create_retention_chart(retention_rates: Dict[int, float]) -> go.Figure:
         plot_bgcolor='rgba(0,0,0,0)',
         showlegend=False,
     )
-    
+
     return fig
 
 
 def create_xp_distribution(members: List[Dict]) -> go.Figure:
     """Create histogram of total XP distribution."""
     xp_values = [m.get('exp', 0) or 0 for m in members]
-    
+
     fig = go.Figure(data=[
         go.Histogram(
             x=xp_values,
@@ -332,7 +326,7 @@ def create_xp_distribution(members: List[Dict]) -> go.Figure:
             hovertemplate='XP Range: %{x}<br>Members: %{y}<extra></extra>'
         )
     ])
-    
+
     fig.update_layout(
         title=dict(
             text="Total XP Distribution",
@@ -357,15 +351,14 @@ def create_xp_distribution(members: List[Dict]) -> go.Figure:
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
     )
-    
+
     return fig
 
 
 def create_ehp_vs_ehb_scatter(members: List[Dict]) -> go.Figure:
-    """Create scatter plot of EHP vs EHB."""
+    """Create scatter plot of EHP vs EHB colored by status."""
     fig = go.Figure()
-    
-    # Color by activity status
+
     status_colors = {
         'active': CHART_COLORS['active'],
         'at_risk': CHART_COLORS['at_risk'],
@@ -373,7 +366,7 @@ def create_ehp_vs_ehb_scatter(members: List[Dict]) -> go.Figure:
         'churned': CHART_COLORS['churned'],
         'unknown': '#6b7280',
     }
-    
+
     for status, color in status_colors.items():
         status_members = [m for m in members if m.get('activity_status') == status]
         if status_members:
@@ -391,7 +384,7 @@ def create_ehp_vs_ehb_scatter(members: List[Dict]) -> go.Figure:
                 text=[m.get('username', 'Unknown') for m in status_members],
                 hovertemplate='<b>%{text}</b><br>EHP: %{x:.1f}<br>EHB: %{y:.1f}<extra></extra>'
             ))
-    
+
     fig.update_layout(
         title=dict(
             text="EHP vs EHB",
@@ -421,13 +414,12 @@ def create_ehp_vs_ehb_scatter(members: List[Dict]) -> go.Figure:
             borderwidth=1,
         )
     )
-    
+
     return fig
 
 
 def create_health_gauge(score: float) -> go.Figure:
     """Create gauge chart for clan health score."""
-    # Determine color based on score
     if score >= 70:
         color = CHART_COLORS['active']
     elif score >= 50:
@@ -436,7 +428,7 @@ def create_health_gauge(score: float) -> go.Figure:
         color = CHART_COLORS['inactive']
     else:
         color = CHART_COLORS['churned']
-    
+
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=score,
@@ -463,11 +455,11 @@ def create_health_gauge(score: float) -> go.Figure:
             ],
         )
     ))
-    
+
     fig.update_layout(
         height=280,
         margin=dict(l=30, r=30, t=30, b=20),
         paper_bgcolor='rgba(0,0,0,0)',
     )
-    
+
     return fig

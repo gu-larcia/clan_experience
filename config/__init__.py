@@ -21,7 +21,7 @@ from .settings import (
 
 __all__ = [
     'APP_VERSION',
-    'APP_TITLE', 
+    'APP_TITLE',
     'APP_ICON',
     'WOM_API_BASE',
     'WOM_GROUP_ID',
